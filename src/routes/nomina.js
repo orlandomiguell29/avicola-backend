@@ -1,0 +1,11 @@
+import {Router} from 'express';
+import {list,create,update,remove,comprobante} from '../controllers/nomina.js';
+import {requireAuth,requirePermission} from '../middleware/auth.js';
+const r=Router();
+r.use(requireAuth);
+r.get('/',list);
+r.post('/',create);
+r.get('/:id/comprobante',comprobante);
+r.put('/:id',requirePermission('edit'),update);
+r.delete('/:id',requirePermission('delete'),remove);
+export default r;

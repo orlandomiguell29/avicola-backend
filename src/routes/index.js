@@ -1,0 +1,28 @@
+import { Router } from 'express';
+import authRoutes from './auth.js';
+import dashboardRoutes from './dashboard.js';
+import cajaRoutes from './caja.js';
+import facturasRoutes from './facturas.js';
+import proveedoresRoutes from './proveedores.js';
+import empleadosRoutes from './empleados.js';
+import nominaRoutes from './nomina.js';
+import settingsRoutes from './settings.js';
+import usuariosRoutes from './usuarios.js';
+import auditoriaRoutes from './auditoria.js';
+import exportRoutes from './export.js';
+import empresaRoutes from './empresa.js';
+
+const r = Router();
+r.use('/auth', authRoutes);
+r.use('/dashboard', dashboardRoutes);
+r.use('/caja', cajaRoutes);
+r.use('/facturas', facturasRoutes);
+r.use('/proveedores', proveedoresRoutes);
+r.use('/empleados', empleadosRoutes);
+r.use('/nomina', nominaRoutes);
+r.use('/settings', settingsRoutes);
+r.use('/usuarios', usuariosRoutes);
+r.use('/auditoria', auditoriaRoutes);
+r.use('/export', exportRoutes);
+r.use('/empresa', empresaRoutes);
+export default r;

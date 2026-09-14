@@ -1,0 +1,10 @@
+import {Router} from 'express';
+import {list,create,update,remove} from '../controllers/facturas.js';
+import {requireAuth,requirePermission} from '../middleware/auth.js';
+const r=Router();
+r.use(requireAuth);
+r.get('/',list);
+r.post('/',create);
+r.put('/:id',requirePermission('edit'),update);
+r.delete('/:id',requirePermission('delete'),remove);
+export default r;

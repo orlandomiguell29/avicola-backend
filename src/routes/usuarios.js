@@ -1,0 +1,10 @@
+import {Router} from 'express';
+import {list,create,update,remove} from '../controllers/usuarios.js';
+import {requireAuth,requireAdmin} from '../middleware/auth.js';
+const r=Router();
+r.use(requireAuth,requireAdmin);
+r.get('/',list);
+r.post('/',create);
+r.put('/:id',update);
+r.delete('/:id',remove);
+export default r;

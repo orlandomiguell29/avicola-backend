@@ -1,0 +1,11 @@
+import {Router} from 'express';
+import {list,listActivos,create,update,remove} from '../controllers/proveedores.js';
+import {requireAuth,requirePermission} from '../middleware/auth.js';
+const r=Router();
+r.use(requireAuth);
+r.get('/',list);
+r.get('/activos',listActivos);
+r.post('/',create);
+r.put('/:id',requirePermission('edit'),update);
+r.delete('/:id',requirePermission('delete'),remove);
+export default r;
