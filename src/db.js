@@ -1,20 +1,17 @@
-import mysql from 'mysql2/promise';
+import pg from 'pg';
 import dotenv from 'dotenv';
 dotenv.config();
 
-export const pool = mysql.createPool({
-  host: process.env.DB_HOST || '127.0.0.1',
-  port: Number(process.env.DB_PORT) || 3308,
-  user: process.env.DB_USER || 'root',
-  password: process.env.DB_PASSWORD || '',
-  database: process.env.DB_NAME || 'avicola_flamencos',
-  waitForConnections: true,
-  connectionLimit: 10,
-  timezone: '-05:00',
+const { Pool } = pg;
+
+// Configuración de conexión para PostgreSQL / Supabase
+export const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
 });
 
 export async function query(sql, params = []) {
-  const [rows] = await pool.execute(sql, params);
+  const { rows } = await pool.query(sql, params);
   return rows;
 }
 
@@ -25,15 +22,22 @@ export async function queryOne(sql, params = []) {
 
 export async function auditLog({ userId, accion, tabla, registroId, antes = null, despues = null, ip = null }) {
   try {
-    await pool.execute(
-      'INSERT INTO audit_logs(user_id,accion,tabla_afectada,registro_id,valores_anteriores,valores_nuevos,ip_address) VALUES(?,?,?,?,?,?,?)',
-      [userId || null, accion, tabla, registroId || null,
-       antes ? JSON.stringify(antes) : null,
-       despues ? JSON.stringify(despues) : null,
-       ip || null]
+    // Sintaxis adaptada para PostgreSQL ($1, $2, etc. y NOW() - INTERVAL '30 days')
+    await pool.query(
+      'INSERT INTO audit_logs(user_id, accion, tabla_afectada, registro_id, valores_anteriores, valores_nuevos, ip_address) VALUES($1, $2, $3, $4, $5, $6, $7)',
+      [
+        userId || null,
+        accion,
+        tabla,
+        registroId || null,
+        antes ? JSON.stringify(antes) : null,
+        despues ? JSON.stringify(despues) : null,
+        ip || null
+      ]
     );
+
     // Mantener solo los últimos 30 días de logs
-    await pool.execute("DELETE FROM audit_logs WHERE created_at < DATE_SUB(NOW(), INTERVAL 30 DAY)").catch(() => {});
+    await pool.query("DELETE FROM audit_logs WHERE created_at < NOW() - INTERVAL '30 days'").catch(() => {});
   } catch (_) {}
 }
 
