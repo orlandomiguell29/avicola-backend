@@ -10,6 +10,9 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 3001;
 
+// 1. Permitir que Express confíe en el proxy de Render para express-rate-limit
+app.set('trust proxy', 1);
+
 // Headers HTTP seguros
 app.use(helmet({ contentSecurityPolicy: false }));
 
@@ -22,14 +25,10 @@ const allowedOrigins = [
 
 app.use(cors({
   origin: function (origin, callback) {
-    // Permitir solicitudes sin origin (como Postman o health checks)
     if (!origin) return callback(null, true);
-    
-    // Si el origen está en la lista permitida o proviene de Vercel
     if (allowedOrigins.indexOf(origin) !== -1 || origin.endsWith('.vercel.app')) {
       return callback(null, true);
     }
-    
     return callback(new Error('Bloqueado por política de CORS'));
   },
   credentials: true,
@@ -62,4 +61,4 @@ app.use((err, req, res, next) => {
   res.status(500).json({ error: 'Error interno del servidor' });
 });
 
-app.listen(PORT, () => console.log(`✅ Servidor corriendo en http://localhost:${PORT}`));
+app.listen(PORT, () => console.log(`✅ Servidor corriendo en puerto ${PORT}`));
