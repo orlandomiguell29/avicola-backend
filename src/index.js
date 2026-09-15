@@ -13,10 +13,28 @@ const PORT = process.env.PORT || 3001;
 // Headers HTTP seguros
 app.use(helmet({ contentSecurityPolicy: false }));
 
-// CORS solo desde el cliente configurado
+// Configuración flexible de CORS para Vercel y desarrollo local
+const allowedOrigins = [
+  'https://avicola-frontend-sigma.vercel.app',
+  'http://localhost:5173',
+  'http://localhost:3000'
+];
+
 app.use(cors({
-  origin: process.env.CLIENT_URL || 'http://localhost:5173',
+  origin: function (origin, callback) {
+    // Permitir solicitudes sin origin (como Postman o health checks)
+    if (!origin) return callback(null, true);
+    
+    // Si el origen está en la lista permitida o proviene de Vercel
+    if (allowedOrigins.indexOf(origin) !== -1 || origin.endsWith('.vercel.app')) {
+      return callback(null, true);
+    }
+    
+    return callback(new Error('Bloqueado por política de CORS'));
+  },
   credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
 }));
 
 // Rate limit login: máx 10 intentos por IP cada 15 min
