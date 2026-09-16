@@ -37,7 +37,8 @@ export async function list(req, res) {
 
 export async function listActivos(req, res) {
   try {
-    const rows = await query('SELECT id,nombre,tipo,base_periodo,tarifa_base FROM employees WHERE activo=true AND deleted_at IS NULL ORDER BY nombre');
+    // Evalúa verdadero tanto para booleano (true) como para entero (1)
+    const rows = await query('SELECT id,nombre,tipo,base_periodo,tarifa_base FROM employees WHERE (activo=true OR activo=1) AND deleted_at IS NULL ORDER BY nombre');
     res.json(rows);
   } catch (e) { res.status(500).json({ error: e.message }); }
 }
@@ -46,7 +47,7 @@ export async function create(req, res) {
   try {
     const { nombre, cedula = '', telefono = '', email = '', direccion = '', tipo, base_periodo, tarifa_base, fecha_ingreso = '', observaciones = '' } = req.body;
     const [result] = await query(
-      'INSERT INTO employees(nombre,cedula,telefono,email,direccion,tipo,base_periodo,tarifa_base,fecha_ingreso,activo,observaciones)VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,true,$10) RETURNING id',
+      'INSERT INTO employees(nombre,cedula,telefono,email,direccion,tipo,base_periodo,tarifa_base,fecha_ingreso,activo,observaciones) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,1,$10) RETURNING id',
       [nombre, cedula || null, telefono, email, direccion, tipo, base_periodo, tarifa_base, fecha_ingreso || null, observaciones]
     );
     await auditLog({ userId: req.user.id, accion: 'CREAR', tabla: 'employees', registroId: result.id, despues: req.body, ip: req.ip });
@@ -60,9 +61,11 @@ export async function update(req, res) {
     const { nombre, cedula = '', telefono = '', email = '', direccion = '', tipo, base_periodo, tarifa_base, fecha_ingreso = '', activo = true, observaciones = '' } = req.body;
     const antes = await queryOne('SELECT * FROM employees WHERE id=$1 AND deleted_at IS NULL', [id]);
     if (!antes) return res.status(404).json({ error: 'No encontrado' });
+    
+    const actVal = (activo === true || activo === 1 || activo === '1') ? 1 : 0;
     await query(
       'UPDATE employees SET nombre=$1,cedula=$2,telefono=$3,email=$4,direccion=$5,tipo=$6,base_periodo=$7,tarifa_base=$8,fecha_ingreso=$9,activo=$10,observaciones=$11,updated_at=CURRENT_TIMESTAMP WHERE id=$12',
-      [nombre, cedula || null, telefono, email, direccion, tipo, base_periodo, tarifa_base, fecha_ingreso || null, activo, observaciones, id]
+      [nombre, cedula || null, telefono, email, direccion, tipo, base_periodo, tarifa_base, fecha_ingreso || null, actVal, observaciones, id]
     );
     await auditLog({ userId: req.user.id, accion: 'ACTUALIZAR', tabla: 'employees', registroId: Number(id), antes, despues: req.body, ip: req.ip });
     res.json({ ok: true });
@@ -74,7 +77,7 @@ export async function remove(req, res) {
     const { id } = req.params;
     const antes = await queryOne('SELECT * FROM employees WHERE id=$1 AND deleted_at IS NULL', [id]);
     if (!antes) return res.status(404).json({ error: 'No encontrado' });
-    await query('UPDATE employees SET activo=false,deleted_at=CURRENT_TIMESTAMP WHERE id=$1', [id]);
+    await query('UPDATE employees SET activo=0,deleted_at=CURRENT_TIMESTAMP WHERE id=$1', [id]);
     await auditLog({ userId: req.user.id, accion: 'ELIMINAR', tabla: 'employees', registroId: Number(id), antes, ip: req.ip });
     res.json({ ok: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
