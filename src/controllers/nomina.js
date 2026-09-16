@@ -23,8 +23,11 @@ export async function create(req, res) {
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
-      const maxRes = await client.query('SELECT COALESCE(MAX(consecutivo),0) max_c FROM payroll_entries FOR UPDATE');
-      const consecutivo = Number(maxRes.rows[0].max_c) + 1;
+      
+      // Corrección: Se elimina 'FOR UPDATE' para evitar el conflicto con funciones agregadas de PostgreSQL
+      const maxRes = await client.query('SELECT consecutivo FROM payroll_entries ORDER BY consecutivo DESC LIMIT 1');
+      const consecutivo = maxRes.rows.length > 0 ? Number(maxRes.rows[0].consecutivo) + 1 : 1;
+      
       const total_pagado = Math.round(parseFloat(cantidad_trabajada) * parseFloat(tarifa_aplicada) * 100) / 100;
       
       const insertRes = await client.query(
