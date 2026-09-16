@@ -4,10 +4,12 @@ dotenv.config();
 
 const { Pool } = pg;
 
-// Configuración de conexión para PostgreSQL / Supabase
+// SSL activado para producción/Supabase
+const isProduction = process.env.NODE_ENV === 'production' || process.env.DATABASE_URL?.includes('supabase');
+
 export const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
+  ssl: isProduction ? { rejectUnauthorized: false } : false,
 });
 
 export async function query(sql, params = []) {
@@ -22,7 +24,6 @@ export async function queryOne(sql, params = []) {
 
 export async function auditLog({ userId, accion, tabla, registroId, antes = null, despues = null, ip = null }) {
   try {
-    // Sintaxis adaptada para PostgreSQL ($1, $2, etc. y NOW() - INTERVAL '30 days')
     await pool.query(
       'INSERT INTO audit_logs(user_id, accion, tabla_afectada, registro_id, valores_anteriores, valores_nuevos, ip_address) VALUES($1, $2, $3, $4, $5, $6, $7)',
       [
@@ -36,8 +37,8 @@ export async function auditLog({ userId, accion, tabla, registroId, antes = null
       ]
     );
 
-    // Mantener solo los últimos 30 días de logs
-    await pool.query("DELETE FROM audit_logs WHERE created_at < NOW() - INTERVAL '30 days'").catch(() => {});
+    // Mantenimiento de logs a 30 días
+    await pool.query("DELETE FROM audit_logs WHERE created_at < CURRENT_TIMESTAMP - INTERVAL '30 days'").catch(() => {});
   } catch (_) {}
 }
 
