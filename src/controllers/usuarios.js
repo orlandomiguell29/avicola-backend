@@ -21,13 +21,26 @@ export async function create(req, res) {
     const edtVal = can_edit ? 1 : 0;
     const delVal = can_delete ? 1 : 0;
 
+    // Inserción directa utilizando la secuencia nativa de la base de datos
     const [result] = await query(
-      'INSERT INTO users(name,email,password,role,can_export,can_edit,can_delete,active) VALUES($1,$2,$3,$4,$5,$6,$7,1) RETURNING id',
+      'INSERT INTO users(name, email, password, role, can_export, can_edit, can_delete, active) VALUES($1, $2, $3, $4, $5, $6, $7, 1) RETURNING id',
       [name, email, hash, role, expVal, edtVal, delVal]
     );
-    await auditLog({ userId: req.user.id, accion: 'CREAR', tabla: 'users', registroId: result.id, despues: { name, email, role }, ip: req.ip });
-    res.json({ ok: true, id: result.id });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+
+    await auditLog({ 
+      userId: req.user.id, 
+      accion: 'CREAR', 
+      tabla: 'users', 
+      registroId: Number(result.id), 
+      despues: { name, email, role }, 
+      ip: req.ip 
+    });
+
+    res.json({ ok: true, id: Number(result.id) });
+  } catch (e) { 
+    console.error('Error create usuario:', e);
+    res.status(500).json({ error: e.message }); 
+  }
 }
 
 export async function update(req, res) {
