@@ -19,10 +19,13 @@ export async function list(req, res) {
 export async function create(req, res) {
   try {
     const { fecha, supplier_id, numero_factura, descripcion_insumo, cantidad, costo_unitario } = req.body;
-    const prov = await queryOne('SELECT nombre FROM suppliers WHERE id=$1 AND activo=true', [supplier_id]);
-    if (!prov) return res.status(400).json({ error: 'Proveedor no encontrado' });
+    
+    // Verificación compatible tanto para boolean (true) como smallint (1)
+    const prov = await queryOne('SELECT nombre FROM suppliers WHERE id=$1 AND (activo=true OR activo=1) AND deleted_at IS NULL', [supplier_id]);
+    if (!prov) return res.status(400).json({ error: 'Proveedor no encontrado o inactivo' });
+    
     const costo_total = Math.round(parseFloat(cantidad) * parseFloat(costo_unitario) * 100) / 100;
-    const [result] = await query('INSERT INTO supplier_invoices(supplier_id,fecha,nombre_proveedor,numero_factura,descripcion_insumo,cantidad,costo_unitario,costo_total,user_id)VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id',
+    const [result] = await query('INSERT INTO supplier_invoices(supplier_id,fecha,nombre_proveedor,numero_factura,descripcion_insumo,cantidad,costo_unitario,costo_total,user_id) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id',
       [supplier_id, fecha, prov.nombre, numero_factura, descripcion_insumo, cantidad, costo_unitario, costo_total, req.user.id]);
     await auditLog({ userId: req.user.id, accion: 'CREAR', tabla: 'supplier_invoices', registroId: result.id, despues: req.body, ip: req.ip });
     res.json({ ok: true, id: result.id });
