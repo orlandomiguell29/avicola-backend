@@ -16,29 +16,28 @@ export async function getDashboard(req, res) {
     const fecha = req.query.fecha || new Date().toISOString().split('T')[0];
     const [anio, mes] = fecha.split('-').map(Number);
 
-    // 1. Cargar agregaciones por día directamente desde la BD (3 consultas en total)
+    // Sintaxis compatible con PostgreSQL (TO_CHAR en lugar de DATE_FORMAT)
     const [cashRows, provRows, nomRows] = await Promise.all([
       query(`
-        SELECT DATE_FORMAT(fecha, '%Y-%m-%d') AS f, tipo, SUM(monto_total) AS total 
+        SELECT TO_CHAR(fecha, 'YYYY-MM-DD') AS f, tipo, SUM(monto_total) AS total 
         FROM cash_movements 
         WHERE deleted_at IS NULL 
-        GROUP BY DATE_FORMAT(fecha, '%Y-%m-%d'), tipo
+        GROUP BY TO_CHAR(fecha, 'YYYY-MM-DD'), tipo
       `),
       query(`
-        SELECT DATE_FORMAT(fecha, '%Y-%m-%d') AS f, SUM(costo_total) AS total 
+        SELECT TO_CHAR(fecha, 'YYYY-MM-DD') AS f, SUM(costo_total) AS total 
         FROM supplier_invoices 
         WHERE deleted_at IS NULL 
-        GROUP BY DATE_FORMAT(fecha, '%Y-%m-%d')
+        GROUP BY TO_CHAR(fecha, 'YYYY-MM-DD')
       `),
       query(`
-        SELECT DATE_FORMAT(fecha, '%Y-%m-%d') AS f, SUM(total_pagado) AS total 
+        SELECT TO_CHAR(fecha, 'YYYY-MM-DD') AS f, SUM(total_pagado) AS total 
         FROM payroll_entries 
         WHERE deleted_at IS NULL 
-        GROUP BY DATE_FORMAT(fecha, '%Y-%m-%d')
+        GROUP BY TO_CHAR(fecha, 'YYYY-MM-DD')
       `)
     ]);
 
-    // 2. Consolidar datos en un mapa agrupado por fecha
     const dailyMap = new Map();
 
     const getOrCreate = (f) => {
@@ -68,17 +67,14 @@ export async function getDashboard(req, res) {
       getOrCreate(f).egNom += Number(r.total || 0);
     }
 
-    // 3. Obtener el universo de fechas ordenado
     const todasFechas = Array.from(dailyMap.keys()).sort();
 
-    // 4. Métricas de hoy
     const hoyData = dailyMap.get(fecha) || { ing: 0, egCaja: 0, egProv: 0, egNom: 0 };
     const ingDia = hoyData.ing;
     const egCajaDia = hoyData.egCaja;
     const egProvDia = hoyData.egProv;
     const egNomDia = hoyData.egNom;
 
-    // 5. Métricas del mes seleccionado
     let ingMes = 0, egCajaMes = 0, egProvMes = 0, egNomMes = 0;
     for (const [f, data] of dailyMap.entries()) {
       const [y, m] = f.split('-').map(Number);
@@ -90,7 +86,6 @@ export async function getDashboard(req, res) {
       }
     }
 
-    // 6. Serie de los últimos 7 días con movimiento
     const ultimasFechas = todasFechas.slice(-7);
     const serie = ultimasFechas.map(f => {
       const d = dailyMap.get(f);
@@ -101,7 +96,6 @@ export async function getDashboard(req, res) {
       };
     });
 
-    // 7. Serie acumulada histórica
     let acumI = 0, acumE = 0;
     const serieAcum = [];
     for (const f of todasFechas) {
