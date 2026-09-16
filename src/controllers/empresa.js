@@ -13,10 +13,10 @@ export async function update(req, res) {
     const existe = await query('SELECT id FROM company_info LIMIT 1');
     const antes = existe[0] || {};
     if (existe.length === 0) {
-      await query('INSERT INTO company_info(nombre_empresa,nit,telefono,email,ciudad)VALUES(?,?,?,?,?)',
+      await query('INSERT INTO company_info(nombre_empresa,nit,telefono,email,ciudad)VALUES($1,$2,$3,$4,$5)',
         [nombre_empresa, nit, telefono, email, ciudad]);
     } else {
-      await query('UPDATE company_info SET nombre_empresa=?,nit=?,telefono=?,email=?,ciudad=?,updated_at=NOW() WHERE id=?',
+      await query('UPDATE company_info SET nombre_empresa=$1,nit=$2,telefono=$3,email=$4,ciudad=$5,updated_at=CURRENT_TIMESTAMP WHERE id=$6',
         [nombre_empresa, nit, telefono, email, ciudad, existe[0].id]);
     }
     await auditLog({ userId: req.user.id, accion: 'ACTUALIZAR', tabla: 'company_info', registroId: 1, antes, despues: req.body, ip: req.ip });
