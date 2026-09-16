@@ -13,28 +13,25 @@ function toStr(d) {
 
 export async function getDashboard(req, res) {
   try {
-    const fecha = req.query.fecha || new Date().toISOString().split('T')[0];
-    const [anio, mes] = fecha.split('-').map(Number);
-
-    // Sintaxis compatible con PostgreSQL (TO_CHAR en lugar de DATE_FORMAT)
+    // 1. Obtener todas las agrupaciones formateando la fecha de forma nativa en PG (YYYY-MM-DD)
     const [cashRows, provRows, nomRows] = await Promise.all([
       query(`
-        SELECT TO_CHAR(fecha, 'YYYY-MM-DD') AS f, tipo, SUM(monto_total) AS total 
+        SELECT fecha::date::text AS f, tipo, SUM(monto_total) AS total 
         FROM cash_movements 
         WHERE deleted_at IS NULL 
-        GROUP BY TO_CHAR(fecha, 'YYYY-MM-DD'), tipo
+        GROUP BY fecha::date::text, tipo
       `),
       query(`
-        SELECT TO_CHAR(fecha, 'YYYY-MM-DD') AS f, SUM(costo_total) AS total 
+        SELECT fecha::date::text AS f, SUM(costo_total) AS total 
         FROM supplier_invoices 
         WHERE deleted_at IS NULL 
-        GROUP BY TO_CHAR(fecha, 'YYYY-MM-DD')
+        GROUP BY fecha::date::text
       `),
       query(`
-        SELECT TO_CHAR(fecha, 'YYYY-MM-DD') AS f, SUM(total_pagado) AS total 
+        SELECT fecha::date::text AS f, SUM(total_pagado) AS total 
         FROM payroll_entries 
         WHERE deleted_at IS NULL 
-        GROUP BY TO_CHAR(fecha, 'YYYY-MM-DD')
+        GROUP BY fecha::date::text
       `)
     ]);
 
@@ -68,6 +65,14 @@ export async function getDashboard(req, res) {
     }
 
     const todasFechas = Array.from(dailyMap.keys()).sort();
+
+    // 2. Determinar la fecha de consulta: si no se envía o no hay datos para esa fecha, usa la última fecha con movimientos
+    let fecha = req.query.fecha;
+    if (!fecha || !dailyMap.has(fecha)) {
+      fecha = todasFechas.length > 0 ? todasFechas[todasFechas.length - 1] : new Date().toISOString().split('T')[0];
+    }
+
+    const [anio, mes] = fecha.split('-').map(Number);
 
     const hoyData = dailyMap.get(fecha) || { ing: 0, egCaja: 0, egProv: 0, egNom: 0 };
     const ingDia = hoyData.ing;
