@@ -40,8 +40,6 @@ export async function list(req, res) {
 
 export async function listActivos(req, res) {
   try {
-    // Retorna todos los empleados no eliminados explícitamente
-    // Evita cualquier fallo por tipo de dato en la columna 'activo' (smallint vs boolean)
     const rows = await query(
       `SELECT id, nombre, tipo, base_periodo, tarifa_base 
        FROM employees 
@@ -70,18 +68,14 @@ export async function create(req, res) {
       observaciones = null 
     } = req.body;
 
-    // 1. Obtener el nuevo ID numérico manualmente
-    const [{ next_id }] = await query('SELECT COALESCE(MAX(id), 0) + 1 AS next_id FROM employees');
-
-    // 2. Insertar con el ID generado explícitamente y valores sanitizados
-    await query(
+    // Inserción directa sin subconsulta MAX para prevenir errores de agregación en transacciones
+    const [result] = await query(
       `INSERT INTO employees (
-        id, nombre, cedula, telefono, email, direccion, tipo, base_periodo, tarifa_base, fecha_ingreso, activo, observaciones
+        nombre, cedula, telefono, email, direccion, tipo, base_periodo, tarifa_base, fecha_ingreso, activo, observaciones
       ) VALUES (
-        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 1, $11
-      )`,
+        $1, $2, $3, $4, $5, $6, $7, $8, $9, 1, $10
+      ) RETURNING id`,
       [
-        next_id,
         nombre,
         cedula || null,
         telefono || null,
@@ -99,12 +93,12 @@ export async function create(req, res) {
       userId: req.user.id, 
       accion: 'CREAR', 
       tabla: 'employees', 
-      registroId: Number(next_id), 
+      registroId: Number(result.id), 
       despues: req.body, 
       ip: req.ip 
     });
 
-    res.json({ ok: true, id: Number(next_id) });
+    res.json({ ok: true, id: Number(result.id) });
   } catch (e) { 
     console.error('Error create empleado:', e);
     res.status(500).json({ error: e.message }); 
