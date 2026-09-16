@@ -21,19 +21,28 @@ export async function list(req, res) {
 
 export async function listActivos(req, res) {
   try {
-    // Evalúa verdadero tanto para booleano (true) como para entero (1)
-    const rows = await query('SELECT id, nombre FROM suppliers WHERE (activo = true OR activo = 1) AND deleted_at IS NULL ORDER BY nombre');
+    // Se evalúa como número (1) o IS NULL para evitar el choque de tipos boolean/smallint en PostgreSQL
+    const rows = await query(
+      'SELECT id, nombre FROM suppliers WHERE (activo = 1 OR activo IS NULL) AND deleted_at IS NULL ORDER BY nombre'
+    );
     res.json(rows);
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { 
+    res.status(500).json({ error: e.message }); 
+  }
 }
 
 export async function create(req, res) {
   try {
     const { nombre, nit = '', telefono = '', email = '', contacto = '', direccion = '' } = req.body;
+    
+    // Generación explícita del ID para evitar el error 'null value in column "id"'
     const [result] = await query(
-      'INSERT INTO suppliers(nombre,nit,telefono,email,contacto,direccion,activo) VALUES($1,$2,$3,$4,$5,$6,1) RETURNING id',
+      `INSERT INTO suppliers(id, nombre, nit, telefono, email, contacto, direccion, activo) 
+       VALUES((SELECT COALESCE(MAX(id), 0) + 1 FROM suppliers), $1, $2, $3, $4, $5, $6, 1) 
+       RETURNING id`,
       [nombre, nit, telefono, email, contacto, direccion]
     );
+    
     await auditLog({ userId: req.user.id, accion: 'CREAR', tabla: 'suppliers', registroId: result.id, despues: req.body, ip: req.ip });
     res.json({ ok: true, id: result.id });
   } catch (e) { res.status(500).json({ error: e.message }); }
@@ -46,9 +55,9 @@ export async function update(req, res) {
     const antes = await queryOne('SELECT * FROM suppliers WHERE id=$1 AND deleted_at IS NULL', [id]);
     if (!antes) return res.status(404).json({ error: 'No encontrado' });
     
-    const actVal = activo ? 1 : 0;
+    const actVal = (activo === true || activo === 1 || activo === '1') ? 1 : 0;
     await query(
-      'UPDATE suppliers SET nombre=$1,nit=$2,telefono=$3,email=$4,contacto=$5,direccion=$6,activo=$7,updated_at=CURRENT_TIMESTAMP WHERE id=$8',
+      'UPDATE suppliers SET nombre=$1, nit=$2, telefono=$3, email=$4, contacto=$5, direccion=$6, activo=$7, updated_at=CURRENT_TIMESTAMP WHERE id=$8',
       [nombre, nit, telefono, email, contacto, direccion, actVal, id]
     );
     await auditLog({ userId: req.user.id, accion: 'ACTUALIZAR', tabla: 'suppliers', registroId: Number(id), antes, despues: req.body, ip: req.ip });
@@ -61,7 +70,7 @@ export async function remove(req, res) {
     const { id } = req.params;
     const antes = await queryOne('SELECT * FROM suppliers WHERE id=$1 AND deleted_at IS NULL', [id]);
     if (!antes) return res.status(404).json({ error: 'No encontrado' });
-    await query('UPDATE suppliers SET activo=0,deleted_at=CURRENT_TIMESTAMP WHERE id=$1', [id]);
+    await query('UPDATE suppliers SET activo=0, deleted_at=CURRENT_TIMESTAMP WHERE id=$1', [id]);
     await auditLog({ userId: req.user.id, accion: 'ELIMINAR', tabla: 'suppliers', registroId: Number(id), antes, ip: req.ip });
     res.json({ ok: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
