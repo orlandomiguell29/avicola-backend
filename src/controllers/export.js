@@ -42,8 +42,17 @@ export async function completo(req, res) {
     const { desde = '', hasta = '' } = req.query;
     let wC = 'deleted_at IS NULL', wF = 'deleted_at IS NULL', wN = 'deleted_at IS NULL';
     const pC = [], pF = [], pN = [];
-    if (desde) { wC += ' AND fecha>=?'; pC.push(desde); wF += ' AND fecha>=?'; pF.push(desde); wN += ' AND fecha>=?'; pN.push(desde); }
-    if (hasta) { wC += ' AND fecha<=?'; pC.push(hasta); wF += ' AND fecha<=?'; pF.push(hasta); wN += ' AND fecha<=?'; pN.push(hasta); }
+
+    if (desde) {
+      pC.push(desde); wC += ` AND fecha >= $${pC.length}`;
+      pF.push(desde); wF += ` AND fecha >= $${pF.length}`;
+      pN.push(desde); wN += ` AND fecha >= $${pN.length}`;
+    }
+    if (hasta) {
+      pC.push(hasta); wC += ` AND fecha <= $${pC.length}`;
+      pF.push(hasta); wF += ` AND fecha <= $${pF.length}`;
+      pN.push(hasta); wN += ` AND fecha <= $${pN.length}`;
+    }
 
     const [caja, facturas, nomina] = await Promise.all([
       query(`SELECT cm.*,u.name uname FROM cash_movements cm LEFT JOIN users u ON u.id=cm.user_id WHERE cm.${wC} ORDER BY cm.fecha`, pC),
@@ -99,7 +108,6 @@ export async function completo(req, res) {
     });
     [14, 16, 30, 10, 12, 10, 18, 18, 20].forEach((w, i) => ws3.getColumn(i + 1).width = w);
 
-    wb.xlsx.write(res);
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.setHeader('Content-Disposition', `attachment; filename=reporte_flamencos_${new Date().toISOString().split('T')[0]}.xlsx`);
     await wb.xlsx.write(res);
