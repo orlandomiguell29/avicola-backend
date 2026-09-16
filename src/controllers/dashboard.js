@@ -1,10 +1,5 @@
 import { query } from '../db.js';
 
-async function v(sql, params = []) {
-  const rows = await query(sql, params);
-  return Number(rows[0]?.v || 0);
-}
-
 function toStr(d) {
   if (!d) return null;
   if (d instanceof Date) {
@@ -21,51 +16,116 @@ export async function getDashboard(req, res) {
     const fecha = req.query.fecha || new Date().toISOString().split('T')[0];
     const [anio, mes] = fecha.split('-').map(Number);
 
-    const ingDia    = await v("SELECT COALESCE(SUM(monto_total),0) v FROM cash_movements WHERE fecha=? AND tipo='DEBE' AND deleted_at IS NULL", [fecha]);
-    const egCajaDia = await v("SELECT COALESCE(SUM(monto_total),0) v FROM cash_movements WHERE fecha=? AND tipo='HABER' AND deleted_at IS NULL", [fecha]);
-    const egProvDia = await v("SELECT COALESCE(SUM(costo_total),0) v FROM supplier_invoices WHERE fecha=? AND deleted_at IS NULL", [fecha]);
-    const egNomDia  = await v("SELECT COALESCE(SUM(total_pagado),0) v FROM payroll_entries WHERE fecha=? AND deleted_at IS NULL", [fecha]);
+    // 1. Cargar agregaciones por día directamente desde la BD (3 consultas en total)
+    const [cashRows, provRows, nomRows] = await Promise.all([
+      query(`
+        SELECT DATE_FORMAT(fecha, '%Y-%m-%d') AS f, tipo, SUM(monto_total) AS total 
+        FROM cash_movements 
+        WHERE deleted_at IS NULL 
+        GROUP BY DATE_FORMAT(fecha, '%Y-%m-%d'), tipo
+      `),
+      query(`
+        SELECT DATE_FORMAT(fecha, '%Y-%m-%d') AS f, SUM(costo_total) AS total 
+        FROM supplier_invoices 
+        WHERE deleted_at IS NULL 
+        GROUP BY DATE_FORMAT(fecha, '%Y-%m-%d')
+      `),
+      query(`
+        SELECT DATE_FORMAT(fecha, '%Y-%m-%d') AS f, SUM(total_pagado) AS total 
+        FROM payroll_entries 
+        WHERE deleted_at IS NULL 
+        GROUP BY DATE_FORMAT(fecha, '%Y-%m-%d')
+      `)
+    ]);
 
-    // YEAR()/MONTH() evita el error de colación de DATE_FORMAT
-    const ingMes    = await v("SELECT COALESCE(SUM(monto_total),0) v FROM cash_movements WHERE YEAR(fecha)=? AND MONTH(fecha)=? AND tipo='DEBE' AND deleted_at IS NULL", [anio, mes]);
-    const egCajaMes = await v("SELECT COALESCE(SUM(monto_total),0) v FROM cash_movements WHERE YEAR(fecha)=? AND MONTH(fecha)=? AND tipo='HABER' AND deleted_at IS NULL", [anio, mes]);
-    const egProvMes = await v("SELECT COALESCE(SUM(costo_total),0) v FROM supplier_invoices WHERE YEAR(fecha)=? AND MONTH(fecha)=? AND deleted_at IS NULL", [anio, mes]);
-    const egNomMes  = await v("SELECT COALESCE(SUM(total_pagado),0) v FROM payroll_entries WHERE YEAR(fecha)=? AND MONTH(fecha)=? AND deleted_at IS NULL", [anio, mes]);
+    // 2. Consolidar datos en un mapa agrupado por fecha
+    const dailyMap = new Map();
 
-    // Fechas únicas — consultas separadas para evitar UNION con error de colación
-    const fc = await query("SELECT DISTINCT fecha f FROM cash_movements WHERE deleted_at IS NULL ORDER BY fecha");
-    const ff = await query("SELECT DISTINCT fecha f FROM supplier_invoices WHERE deleted_at IS NULL ORDER BY fecha");
-    const fn = await query("SELECT DISTINCT fecha f FROM payroll_entries WHERE deleted_at IS NULL ORDER BY fecha");
-    const todasFechas = [...new Set([...fc, ...ff, ...fn].map(r => toStr(r.f)).filter(Boolean))].sort();
+    const getOrCreate = (f) => {
+      if (!dailyMap.has(f)) {
+        dailyMap.set(f, { ing: 0, egCaja: 0, egProv: 0, egNom: 0 });
+      }
+      return dailyMap.get(f);
+    };
 
-    const serie = [];
-    for (const f of todasFechas.slice(-7)) {
-      const i  = await v("SELECT COALESCE(SUM(monto_total),0) v FROM cash_movements WHERE fecha=? AND tipo='DEBE' AND deleted_at IS NULL", [f]);
-      const ec = await v("SELECT COALESCE(SUM(monto_total),0) v FROM cash_movements WHERE fecha=? AND tipo='HABER' AND deleted_at IS NULL", [f]);
-      const ep = await v("SELECT COALESCE(SUM(costo_total),0) v FROM supplier_invoices WHERE fecha=? AND deleted_at IS NULL", [f]);
-      const en = await v("SELECT COALESCE(SUM(total_pagado),0) v FROM payroll_entries WHERE fecha=? AND deleted_at IS NULL", [f]);
-      serie.push({ fecha: f, ingresos: i, egresos: ec + ep + en });
+    for (const r of cashRows) {
+      const f = toStr(r.f);
+      if (!f) continue;
+      const entry = getOrCreate(f);
+      if (r.tipo === 'DEBE') entry.ing += Number(r.total || 0);
+      else if (r.tipo === 'HABER') entry.egCaja += Number(r.total || 0);
     }
 
+    for (const r of provRows) {
+      const f = toStr(r.f);
+      if (!f) continue;
+      getOrCreate(f).egProv += Number(r.total || 0);
+    }
+
+    for (const r of nomRows) {
+      const f = toStr(r.f);
+      if (!f) continue;
+      getOrCreate(f).egNom += Number(r.total || 0);
+    }
+
+    // 3. Obtener el universo de fechas ordenado
+    const todasFechas = Array.from(dailyMap.keys()).sort();
+
+    // 4. Métricas de hoy
+    const hoyData = dailyMap.get(fecha) || { ing: 0, egCaja: 0, egProv: 0, egNom: 0 };
+    const ingDia = hoyData.ing;
+    const egCajaDia = hoyData.egCaja;
+    const egProvDia = hoyData.egProv;
+    const egNomDia = hoyData.egNom;
+
+    // 5. Métricas del mes seleccionado
+    let ingMes = 0, egCajaMes = 0, egProvMes = 0, egNomMes = 0;
+    for (const [f, data] of dailyMap.entries()) {
+      const [y, m] = f.split('-').map(Number);
+      if (y === anio && m === mes) {
+        ingMes += data.ing;
+        egCajaMes += data.egCaja;
+        egProvMes += data.egProv;
+        egNomMes += data.egNom;
+      }
+    }
+
+    // 6. Serie de los últimos 7 días con movimiento
+    const ultimasFechas = todasFechas.slice(-7);
+    const serie = ultimasFechas.map(f => {
+      const d = dailyMap.get(f);
+      return {
+        fecha: f,
+        ingresos: d.ing,
+        egresos: d.egCaja + d.egProv + d.egNom
+      };
+    });
+
+    // 7. Serie acumulada histórica
     let acumI = 0, acumE = 0;
     const serieAcum = [];
     for (const f of todasFechas) {
-      const i  = await v("SELECT COALESCE(SUM(monto_total),0) v FROM cash_movements WHERE fecha=? AND tipo='DEBE' AND deleted_at IS NULL", [f]);
-      const ec = await v("SELECT COALESCE(SUM(monto_total),0) v FROM cash_movements WHERE fecha=? AND tipo='HABER' AND deleted_at IS NULL", [f]);
-      const ep = await v("SELECT COALESCE(SUM(costo_total),0) v FROM supplier_invoices WHERE fecha=? AND deleted_at IS NULL", [f]);
-      const en = await v("SELECT COALESCE(SUM(total_pagado),0) v FROM payroll_entries WHERE fecha=? AND deleted_at IS NULL", [f]);
-      acumI += i; acumE += ec + ep + en;
-      serieAcum.push({ fecha: f, ingresos: acumI, egresos: acumE, utilidad: acumI - acumE });
+      const d = dailyMap.get(f);
+      acumI += d.ing;
+      acumE += (d.egCaja + d.egProv + d.egNom);
+      serieAcum.push({
+        fecha: f,
+        ingresos: acumI,
+        egresos: acumE,
+        utilidad: acumI - acumE
+      });
     }
 
     const egD = egCajaDia + egProvDia + egNomDia;
     const egM = egCajaMes + egProvMes + egNomMes;
+
     res.json({
       fecha,
-      resumenDia:         { ingresos: ingDia, egresos: egD, neto: ingDia - egD },
-      resumenMes:         { ingresos: ingMes, egresos: egM, utilidad: ingMes - egM },
+      resumenDia: { ingresos: ingDia, egresos: egD, neto: ingDia - egD },
+      resumenMes: { ingresos: ingMes, egresos: egM, utilidad: ingMes - egM },
       desgloseEgresosMes: { caja: egCajaMes, proveedores: egProvMes, nomina: egNomMes },
-      serie, serieAcum,
+      serie,
+      serieAcum,
     });
   } catch (e) {
     console.error('Dashboard error:', e.message);
